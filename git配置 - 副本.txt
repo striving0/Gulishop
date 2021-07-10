@@ -1,0 +1,19 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[remote "gitee"]
+	url = https://gitee.com/wang_yin_yun/guli-shop.git
+	fetch = +refs/heads/*:refs/remotes/gitee/*
+[remote "github"]
+	url = https://github.com/striving0/Gulishop.git
+	fetch = +refs/heads/*:refs/remotes/github/*
+[branch "master"]
+	remote = gitee
+	merge = refs/heads/master
+[branch "master"]
+	remote = github
+	merge = refs/heads/master
