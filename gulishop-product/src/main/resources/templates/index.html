@@ -22,7 +22,7 @@
       <img src="/static/index/img/top_find_logo.png" alt="">
       <div class="input_find">
         <input type="text" placeholder="卸妆水" />
-        <span style="background: url('/static/index/img/img_12.png') 0 -1px;"></span>
+        <span style="background: url('../static/index/img/img_12.png') 0 -1px;"></span>
         <a href="#"><img src="/static/index/img/img_09.png" /></a>
       </div>
     </div>
@@ -49,14 +49,14 @@
     <!--头部-->
     <div class="header_head">
       <div class="header_head_box">
-        <a href="/static/#" class="img"><img src="/static/index/img/logo.jpg" /></a>
+        <a href="#" class="img"><img src="/static/index/img/logo.jpg" /></a>
         <b class="header_head_p">
   						<a href="#">
   							<img src="/static/index/img/img_05.png" style="border-radius: 50%;"/>
   							<!--<span class="glyphicon glyphicon-map-marker"></span>-->
   							 北京</a>
   						<div class="header_head_p_cs">
-  							<a href="/static/#" style="background: #C81623;color: #fff;">北京</a>
+  							<a href="#" style="background: #C81623;color: #fff;">北京</a>
   							<a href="#">上海</a>
   							<a href="#">天津</a>
   							<a href="#">重庆</a>
@@ -113,9 +113,9 @@
     <div class="header_sous">
       <div class="header_form">
         <input id="searchText" type="text" placeholder="" />
-        <span style="background: url('/static/index/img/img_12.png') 0 -1px;"></span>
+        <span style="background: url('../static/index/img/img_12.png') 0 -1px;"></span>
         <!--<button><i class="glyphicon"></i></button>-->
-        <a href="/static/#" ><img src="/static/index/img/img_09.png" onclick="search()" /></a>
+        <a href="#" ><img src="/static/index/img/img_09.png" onclick="search()" /></a>
       </div>
       <div class="header_ico">
         <div class="header_gw">
@@ -130,7 +130,7 @@
       <div class="header_form_nav">
         <ul>
           <li>
-            <a href="/static/#" class="aaaaa">满999减300</a>
+            <a href="#" class="aaaaa">满999减300</a>
           </li>
           <li>
             <a href="#">金立S11</a>
@@ -201,8 +201,8 @@
       <div class="header_banner">
         <div class="header_main_left">
           <ul>
-            <li th:each="category:${categorys}">
-              <a href="#" class="header_main_left_a" th:attr="ctg-data=${category.catId}"><b th:text="${category.name}"></b></a>
+            <li  th:each="category : ${categorys}">
+              <a href="#" class="header_main_left_a"   th:attr="ctg-data = ${category.catId}"><b th:text="${category.name}">家用电器</b></a>
             </li>
           </ul>
 
@@ -243,8 +243,8 @@
               <div class="user_info_show">
                 <p class="">Hi, 欢迎来到!</p>
                 <p>
-                  <a href="/static/#" class="">登录</a>
-                  <a href="/static/#" class="">注册</a>
+                  <a href="#" class="">登录</a>
+                  <a href="#" class="">注册</a>
                 </p>
               </div>
             </div>
@@ -483,7 +483,7 @@
         </div>
       </div>
       <div class="header_banner1">
-        <a href="/static/#" class="a">
+        <a href="#" class="a">
   						<img src="/static/index/img/5a1e5ce2N034ce344.png" class="aa" />
   					</a>
         <div class="header_banner1_div">
