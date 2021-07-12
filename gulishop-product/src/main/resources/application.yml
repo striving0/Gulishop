@@ -19,7 +19,10 @@ spring:
   jackson:
     date-format: yyyy-MMM-dd HH:mm:ss
   thymeleaf:
-    cache: false
+    cache: true
+  redis:
+    host: 192.168.56.10
+    port: 6379
 
 # MapperScan
 # sql映射文件位置
@@ -33,6 +36,5 @@ mybatis-plus:
 logging:
   level:
     com.wzw.gulishop: debug
-
 
 

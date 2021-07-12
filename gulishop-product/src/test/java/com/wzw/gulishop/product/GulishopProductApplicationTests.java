@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.context.junit4.SpringRunner;
 
 import java.io.FileInputStream;
@@ -18,6 +20,7 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 
 
 @Slf4j
@@ -32,6 +35,22 @@ class GulishopProductApplicationTests {
 
     @Autowired
     CategoryService categoryService;
+
+    @Autowired
+    StringRedisTemplate stringRedisTemplate;
+
+    @Test
+    public void testRedisTemplate(){
+        //K->hello value->word
+        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
+
+        //保存
+        ops.set("hi", "world"+ UUID.randomUUID().toString());
+        //查询
+        String hello = ops.get("hi");
+        System.out.println("之前保存的数据是--"+hello);
+    }
+
 
     @Test
     public void testFindPath(){
