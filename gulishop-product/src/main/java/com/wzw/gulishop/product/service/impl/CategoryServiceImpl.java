@@ -1,5 +1,7 @@
 package com.wzw.gulishop.product.service.impl;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -11,16 +13,15 @@ import com.wzw.gulishop.product.service.CategoryBrandRelationService;
 import com.wzw.gulishop.product.service.CategoryService;
 import com.wzw.gulishop.product.vo.Catelog2Vo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
-
 
 
 @Transactional
@@ -30,6 +31,9 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
 
     @Autowired
     CategoryBrandRelationService categoryBrandRelationService;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
 
     @Override
@@ -81,43 +85,125 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
 
     /**
      * 级联更新所有关联的数据
-     *
-     * */
+     */
 
     @Transactional
     @Override
     public void updateCaseCade(CategoryEntity category) {
         this.updateById(category);
-        categoryBrandRelationService.updateCategory(category.getCatId(),category.getName());
+        categoryBrandRelationService.updateCategory(category.getCatId(), category.getName());
 
     }
 
     @Override
     public List<CategoryEntity> getLevel1Categorys() {
+
+
         //1查出所有一级分类
-        final List<CategoryEntity> categoryEntities = baseMapper.selectList(new QueryWrapper<CategoryEntity>().eq("parent_cid", 0));
+        List<CategoryEntity> categoryEntities = baseMapper.selectList(new QueryWrapper<CategoryEntity>().eq("parent_cid", 0));
 
         return categoryEntities;
     }
 
 
+    //TODO 产生堆外内存溢出 OutOfDirectMemoryError
+    //1)、springboot2.0以后默认使用lettuce作为操作redis的客户端。他使用netty进行网通信
+    //2)、lettuce的bug导致netty的堆外内存溢出 -Xmx300m:netty如果没有指定堆外内存就默认-Xmx:300m
+    //3)、可以通过-Dio.netty.moxDirectMemory进行设置
+    //解决方案，不能使用-Dio.netty.moxDirectMemory只去调大堆内存
+    //升级lettuce客户端。2)、切换使用jedis
     @Override
     public Map<String, List<Catelog2Vo>> getCatelogJson() {
+        //给缓存中方的JSON字符串，拿出JSON字符串，还要逆转为可用的对象类型【序列化与反序列化】
+
+        //1.加入缓存,缓存中存的数据是JSON字符串
+        //JSON是跨语言跨平台的兼容
+        String catalogJson = redisTemplate.opsForValue().get("catalogJson");
+        if (StringUtils.isEmpty(catalogJson)) {
+            System.out.println("缓存不命中...将要查询数据库");
+            //2.缓存中没有就查询数据库
+            final Map<String, List<Catelog2Vo>> catelogJsonFromDb = getCatelogJsonFromDbWithRedisLock();
+//            //3.查到的数据再放到缓存，将对象转为JSON放在缓存中
+//            final String s = JSON.toJSONString(catelogJsonFromDb);
+//            //redisTemplate.opsForValue().set("catalogJson", s);
+//            redisTemplate.opsForValue().set("catalogJson", s, 1, TimeUnit.DAYS);
+            return catelogJsonFromDb;
+        }
+        System.out.println("缓存命中...直接返回");
+        //转为我们注指定的对象
+        Map<String, List<Catelog2Vo>> result = JSON.parseObject(catalogJson, new TypeReference<Map<String, List<Catelog2Vo>>>() {
+        });
+
+        return result;
+    }
 
 
+    public Map<String, List<Catelog2Vo>> getCatelogJsonFromDbWithRedisLock() {
+        //占分布式锁，去Redis占坑
+        final String uuid = UUID.randomUUID().toString();
+        final Boolean lock = redisTemplate.opsForValue().setIfAbsent("lock", uuid, 300, TimeUnit.SECONDS);
+        if (lock) {
+            System.out.println("获取分布式锁成功......");
+            //加锁成功执行业务
+            //2、设置过期时间必须和加锁是同步的和原子的
+            Map<String, List<Catelog2Vo>> dataFromDb;
+            try {
+                dataFromDb = getDataFromDb();
+            }finally {
+                String script="if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+                //删除锁
+                final Long lock1 = redisTemplate.execute(new DefaultRedisScript<Long>(script, Long.class),
+                        Arrays.asList("lock"), uuid);
+            }
+            //redisTemplate.delete("lock");
+            //删除锁之前获取值对比，对比成功功删锁也得是原子操作 lua脚本解锁
+//            final String lockValue = redisTemplate.opsForValue().get("lock");
+//            if (uuid.equals(lockValue)){
+//                //删除我自己的锁
+//                redisTemplate.expire("lock", 30,TimeUnit.SECONDS);
+//            }
+
+            return dataFromDb;
+        } else {
+            //加锁失败重试
+            //休眠100ms重试
+            System.out.println("获取分布式锁失败....等待重试....");
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+
+            }
+            return  getCatelogJsonFromDbWithRedisLock();//自旋的方式
+        }
+    }
+
+    private Map<String, List<Catelog2Vo>> getDataFromDb() {
+        String catalogJson = redisTemplate.opsForValue().get("catalogJson");
+        if (!StringUtils.isEmpty(catalogJson)) {
+            //如果缓存不为空直接返回
+            //转为我们注指定的对象
+            Map<String, List<Catelog2Vo>> result = JSON.parseObject(catalogJson, new TypeReference<Map<String, List<Catelog2Vo>>>() {
+            });
+            return result;
+        }
+        System.out.println("查询了数据库..........");
         /**
          *
          * 1.将数据库多次查询变为一次
          */
-
-        final List<CategoryEntity> selectList = baseMapper.selectList(null);
+        /**
+         * 1、空结果缓存，解决缓存击穿
+         * 2、设置过期时间(添加随机值)，解决缓存雪崩
+         * 3、加锁，解决缓存击穿
+         */
+        List<CategoryEntity> selectList = baseMapper.selectList(null);
 
         //1查出所有一级分类
-        List<CategoryEntity> level1Categorys = getParent_cid(selectList,0L);
+        List<CategoryEntity> level1Categorys = getParent_cid(selectList, 0L);
         //2封装数据
-        final Map<String, List<Catelog2Vo>> parent_id = level1Categorys.stream().collect(Collectors.toMap(k -> k.getCatId().toString(), v -> {
+        Map<String, List<Catelog2Vo>> parent_id = level1Categorys.stream().collect(Collectors.toMap(k -> k.getCatId().toString(), v -> {
             //1每一个一级分类，拿到这个一级的二级分类
-            List<CategoryEntity> categoryEntities = getParent_cid(selectList,v.getCatId());
+            List<CategoryEntity> categoryEntities = getParent_cid(selectList, v.getCatId());
             //2封装上面的结果
             List<Catelog2Vo> catelog2Vos = null;
             if (categoryEntities != null) {
@@ -125,7 +211,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
                     Catelog2Vo catelog2Vo = new Catelog2Vo(v.getCatId().toString(), null, l2.getCatId().toString(), l2.getName());
                     //3找当前二级分类的三级分类分装成VO
                     List<CategoryEntity> level3Catelog = getParent_cid(selectList, l2.getCatId());
-                    if (level3Catelog !=null){
+                    if (level3Catelog != null) {
                         List<Catelog2Vo.Catelog3Vo> collect = level3Catelog.stream().map(l3 -> {
                             //2分装成指定格式
                             Catelog2Vo.Catelog3Vo catelog3Vo = new Catelog2Vo.Catelog3Vo(l2.getCatId().toString(), l3.getCatId().toString(), l3.getName());
@@ -138,11 +224,30 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
             }
             return catelog2Vos;
         }));
+
+        //3.查到的数据再放到缓存，将对象转为JSON放在缓存中
+        final String s = JSON.toJSONString(parent_id);
+        //redisTemplate.opsForValue().set("catalogJson", s);
+        redisTemplate.opsForValue().set("catalogJson", s, 1, TimeUnit.DAYS);
         return parent_id;
     }
 
-    private List<CategoryEntity> getParent_cid(List<CategoryEntity> selectList,Long parent_cid) {
-        final List<CategoryEntity> collect = selectList.stream().filter(item -> item.getParentCid() == parent_cid).collect(Collectors.toList());
+
+    //从数据库查询并分装分类数据
+    public Map<String, List<Catelog2Vo>> getCatelogJsonFromDbWithLocalLock() {
+
+        //1只要一把锁就能锁住需要这个锁的线程
+        //1、synchronized(this):springboot所有的组件容器中都是单例的
+        // TODO synchronized,JUC(lock)都是本地锁,在分布式情况下，想要锁住所有就必须使用分布式锁
+        synchronized (this) {
+            //得到锁以后，我们再去缓存中确定一次，如果没有才需要继续查询
+            return getDataFromDb();
+        }
+
+    }
+
+    private List<CategoryEntity> getParent_cid(List<CategoryEntity> selectList, Long parent_cid) {
+        List<CategoryEntity> collect = selectList.stream().filter(item -> item.getParentCid() == parent_cid).collect(Collectors.toList());
         return collect;
 
         //return baseMapper.selectList(new QueryWrapper<CategoryEntity>().eq("parent_cid", v.getCatId()));
