@@ -258,7 +258,7 @@ public class SpuInfoServiceImpl extends ServiceImpl<SpuInfoDao, SpuInfoEntity> i
         System.out.println("qwertyuiop="+searchAttrIds);
 
         Set<Long> idSet = new HashSet<>(searchAttrIds);
-        final List<SkuEsModel.Attrs> attrsList = baseAttrs.stream().filter(item -> {
+        List<SkuEsModel.Attrs> attrsList = baseAttrs.stream().filter(item -> {
             return idSet.contains(item.getAttrId());
         }).map(item -> {
             SkuEsModel.Attrs attrs1 = new SkuEsModel.Attrs();
@@ -284,35 +284,25 @@ public class SpuInfoServiceImpl extends ServiceImpl<SpuInfoDao, SpuInfoEntity> i
             //组装需要的数据
             SkuEsModel esModel = new SkuEsModel();
             BeanUtils.copyProperties(sku, esModel);
-
             esModel.setSkuPrice(sku.getPrice());
             esModel.setSkuImg(sku.getSkuDefaultImg());
             //hasStock,hostScore
             //设置库存信息
-
             if (finalStockMap ==null){
                 esModel.setHasStock(true);
             }else {
                 esModel.setHasStock(finalStockMap.get(sku.getSkuId()));
             }
-
-
             //TODO 2.热度评分，0
             esModel.setHotScore(0L);
-
             //TODO 3.查询品牌和分类的名字信息
-
             BrandEntity brand = brandService.getById(esModel.getBrandId());
             esModel.setBrandName(brand.getName());
             esModel.setBrandImg(brand.getLogo());
-
             CategoryEntity category = categoryService.getById(esModel.getCatalogId());
             esModel.setCatalogName(category.getName());
-
             //设置检索属性
             esModel.setAttrs(attrsList);
-
-
             return esModel;
         }).collect(Collectors.toList());
         // TODO 5.将数据发送给es进行保存

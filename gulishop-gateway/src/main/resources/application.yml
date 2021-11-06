@@ -54,7 +54,13 @@ spring:
         - id: gulishop_host_route
           uri: lb://gulishop-product
           predicates:
-            - Host=**.gulishop.com,gulishop.com
+            - Host=gulishop.com
+
+
+        - id: gulishop_search_route
+          uri: lb://gulishop-search
+          predicates:
+            - Host=search.gulishop.com
 
 
 ##      - id: admin_route

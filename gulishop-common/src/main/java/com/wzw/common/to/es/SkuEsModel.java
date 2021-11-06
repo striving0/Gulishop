@@ -39,11 +39,11 @@ public class SkuEsModel {
 
     private String catalogName;
 
-    private List<Object> attrs;
+    private List<Attrs> attrs;
 
-    public void setAttrs(List<Attrs> attrsList) {
-        this.attrs = attrs;
-    }
+//    public void setAttrs(List<Attrs> attrsList) {
+//        this.attrs = attrs;
+//    }
 
     @Data
     public static class Attrs{

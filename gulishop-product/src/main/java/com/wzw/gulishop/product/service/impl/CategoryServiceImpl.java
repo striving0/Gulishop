@@ -12,7 +12,11 @@ import com.wzw.gulishop.product.entity.CategoryEntity;
 import com.wzw.gulishop.product.service.CategoryBrandRelationService;
 import com.wzw.gulishop.product.service.CategoryService;
 import com.wzw.gulishop.product.vo.Catelog2Vo;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -34,6 +38,9 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    RedissonClient redisson;
 
 
     @Override
@@ -85,8 +92,9 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
 
     /**
      * 级联更新所有关联的数据
+     * @CacheEvict 缓存失效模式
      */
-
+    @CacheEvict(value = "category",key = "'getLevel1Categorys'")
     @Transactional
     @Override
     public void updateCaseCade(CategoryEntity category) {
@@ -95,16 +103,62 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
 
     }
 
+    //每一个缓存的数据都要指定放到哪个名字的缓存，【缓存的分区】
+    @Cacheable(value = {"category"},key = "#root.method.name",sync = true) //代表当前方法的结果需要缓存，如果缓存中有方法不调用，如果缓存中没有就调用方法，最后将结果放回缓存中
     @Override
     public List<CategoryEntity> getLevel1Categorys() {
 
-
+        System.out.println("getLevel1Categorys..........");
+        Long l = System.currentTimeMillis();
         //1查出所有一级分类
         List<CategoryEntity> categoryEntities = baseMapper.selectList(new QueryWrapper<CategoryEntity>().eq("parent_cid", 0));
 
         return categoryEntities;
     }
 
+    @Cacheable(value = "category" , key = "#root.methodName")
+    @Override
+    public Map<String, List<Catelog2Vo>> getCatelogJson() {
+        System.out.println("查询了数据库..........");
+        /**
+         *
+         * 1.将数据库多次查询变为一次
+         */
+        /**
+         * 1、空结果缓存，解决缓存击穿
+         * 2、设置过期时间(添加随机值)，解决缓存雪崩
+         * 3、加锁，解决缓存击穿
+         */
+        List<CategoryEntity> selectList = baseMapper.selectList(null);
+
+        //1查出所有一级分类
+        List<CategoryEntity> level1Categorys = getParent_cid(selectList, 0L);
+        //2封装数据
+        Map<String, List<Catelog2Vo>> parent_id = level1Categorys.stream().collect(Collectors.toMap(k -> k.getCatId().toString(), v -> {
+            //1每一个一级分类，拿到这个一级的二级分类
+            List<CategoryEntity> categoryEntities = getParent_cid(selectList, v.getCatId());
+            //2封装上面的结果
+            List<Catelog2Vo> catelog2Vos = null;
+            if (categoryEntities != null) {
+                catelog2Vos = categoryEntities.stream().map(l2 -> {
+                    Catelog2Vo catelog2Vo = new Catelog2Vo(v.getCatId().toString(), null, l2.getCatId().toString(), l2.getName());
+                    //3找当前二级分类的三级分类分装成VO
+                    List<CategoryEntity> level3Catelog = getParent_cid(selectList, l2.getCatId());
+                    if (level3Catelog != null) {
+                        List<Catelog2Vo.Catelog3Vo> collect = level3Catelog.stream().map(l3 -> {
+                            //2分装成指定格式
+                            Catelog2Vo.Catelog3Vo catelog3Vo = new Catelog2Vo.Catelog3Vo(l2.getCatId().toString(), l3.getCatId().toString(), l3.getName());
+                            return catelog3Vo;
+                        }).collect(Collectors.toList());
+                        catelog2Vo.setCatalog3List(collect);
+                    }
+                    return catelog2Vo;
+                }).collect(Collectors.toList());
+            }
+            return catelog2Vos;
+        }));
+        return parent_id;
+    }
 
     //TODO 产生堆外内存溢出 OutOfDirectMemoryError
     //1)、springboot2.0以后默认使用lettuce作为操作redis的客户端。他使用netty进行网通信
@@ -112,8 +166,8 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
     //3)、可以通过-Dio.netty.moxDirectMemory进行设置
     //解决方案，不能使用-Dio.netty.moxDirectMemory只去调大堆内存
     //升级lettuce客户端。2)、切换使用jedis
-    @Override
-    public Map<String, List<Catelog2Vo>> getCatelogJson() {
+//    @Override
+    public Map<String, List<Catelog2Vo>> getCatelogJson2() {
         //给缓存中方的JSON字符串，拿出JSON字符串，还要逆转为可用的对象类型【序列化与反序列化】
 
         //1.加入缓存,缓存中存的数据是JSON字符串
@@ -138,6 +192,31 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
     }
 
 
+    /**
+     * 缓存里的数据如何和数据库里的保持一致
+     * 缓存数据一致性
+     * 1）、双写模式
+     * 2）、失效模式
+     *
+     * @return
+     */
+    public Map<String, List<Catelog2Vo>> getCatelogJsonFromDbWithRedissonLock() {
+        //占分布式锁，去Redis占坑
+        //锁的粒度越细就越快
+        RLock lock = redisson.getLock("catelogJson-lock");
+        lock.lock();
+        Map<String, List<Catelog2Vo>> dataFromDb;
+        try {
+            dataFromDb = getDataFromDb();
+        } finally {
+            lock.unlock();
+        }
+
+        return dataFromDb;
+
+    }
+
+
     public Map<String, List<Catelog2Vo>> getCatelogJsonFromDbWithRedisLock() {
         //占分布式锁，去Redis占坑
         final String uuid = UUID.randomUUID().toString();
@@ -149,8 +228,8 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
             Map<String, List<Catelog2Vo>> dataFromDb;
             try {
                 dataFromDb = getDataFromDb();
-            }finally {
-                String script="if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
+            } finally {
+                String script = "if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end";
                 //删除锁
                 final Long lock1 = redisTemplate.execute(new DefaultRedisScript<Long>(script, Long.class),
                         Arrays.asList("lock"), uuid);
@@ -170,10 +249,10 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
             System.out.println("获取分布式锁失败....等待重试....");
             try {
                 Thread.sleep(200);
-            } catch (InterruptedException e) {
+            } catch (Exception e) {
 
             }
-            return  getCatelogJsonFromDbWithRedisLock();//自旋的方式
+            return getCatelogJsonFromDbWithRedisLock();//自旋的方式
         }
     }
 
@@ -217,7 +296,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryDao, CategoryEntity
                             Catelog2Vo.Catelog3Vo catelog3Vo = new Catelog2Vo.Catelog3Vo(l2.getCatId().toString(), l3.getCatId().toString(), l3.getName());
                             return catelog3Vo;
                         }).collect(Collectors.toList());
-                        catelog2Vo.setCatelog3List(collect);
+                        catelog2Vo.setCatalog3List(collect);
                     }
                     return catelog2Vo;
                 }).collect(Collectors.toList());

@@ -1,4 +1,4 @@
-package com.wzw.gulishop.search.impl;
+package com.wzw.gulishop.search.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.wzw.common.to.es.SkuEsModel;
@@ -50,7 +50,7 @@ public class ProductSaveServiceImpl implements ProductSaveService{
         BulkResponse bulk = restHighLevelClient.bulk(bulkRequest, GulishopElasticSearchConfig.COMMON_OPTIONS);
         // TODO 1、如果批量错误
         boolean b=bulk.hasFailures();
-        final List<String> collect = Arrays.stream(bulk.getItems()).map(item -> {
+        List<String> collect = Arrays.stream(bulk.getItems()).map(item -> {
             return item.getId();
         }).collect(Collectors.toList());
         log.info("商品上架成功：{},返回的数据：{}",collect,bulk.toString());

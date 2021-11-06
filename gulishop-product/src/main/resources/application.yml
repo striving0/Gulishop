@@ -19,7 +19,7 @@ spring:
   jackson:
     date-format: yyyy-MMM-dd HH:mm:ss
   thymeleaf:
-    cache: true
+    cache: false
   redis:
     host: 192.168.56.10
     port: 6379

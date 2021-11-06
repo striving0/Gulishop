@@ -20,7 +20,7 @@ import java.util.List;
 @Data
 public class Catelog2Vo {
     private String catelog1Id;//1级分类id
-    private List<Catelog3Vo> catelog3List;
+    private List<Catelog3Vo> catalog3List;
     private String id;
     private String name;
 
