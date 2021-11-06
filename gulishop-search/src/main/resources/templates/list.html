@@ -787,6 +787,8 @@
                     <div class="sl_value">
                         <div class="sl_value_logo">
                             <ul>
+
+
                                 <li th:each="brand:${result.brands}">
                                     <a href="/static/search/#" th:href="${'javascript:searchProducts(&quot;branId&quot;,'+brand.branId+')'}">
                                         <img th:src="${brand.brandImg}" alt="">
